@@ -33,7 +33,8 @@ from .metrics import (
 
 from .visualization import (
     create_results_table,
-    plot_estimates_distribution
+    plot_estimates_distribution,
+    create_comparison_table
 )
 
 __all__ = [
@@ -56,5 +57,6 @@ __all__ = [
     'calculate_coverage',
     # Visualization
     'create_results_table',
-    'plot_estimates_distribution'
+    'plot_estimates_distribution',
+    'create_comparison_table'
 ]

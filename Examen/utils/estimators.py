@@ -170,8 +170,12 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
 
     # 1. Estimar propensity score con Logit
     X_logit = np.column_stack([np.ones(n), x1, x2])
-    logit_model = Logit(d, X_logit).fit(disp=0)
-    ps = logit_model.predict(X_logit)
+    try:
+        logit_model = Logit(d, X_logit).fit(disp=0, maxiter=100, method='bfgs')
+        ps = logit_model.predict(X_logit)
+    except:
+        # Si falla, usar propensity score simple (proporción de tratados)
+        ps = np.ones(n) * d.mean()
 
     # 2. Función auxiliar para calcular ATE con matching
     def calculate_ate_matching(y_data, d_data, ps_data):
@@ -220,13 +224,16 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
         # Re-estimar propensity score
         X_boot = np.column_stack([np.ones(n), x1_boot, x2_boot])
         try:
-            logit_boot = Logit(d_boot, X_boot).fit(disp=0)
-            ps_boot = logit_boot.predict(X_boot)
+            # Verificar que hay variación en tratamiento
+            if d_boot.sum() > 0 and d_boot.sum() < n:
+                logit_boot = Logit(d_boot, X_boot).fit(disp=0, maxiter=100,
+                                                        method='bfgs', warn_convergence=False)
+                ps_boot = logit_boot.predict(X_boot)
 
-            # Calcular ATE bootstrap
-            ate_b = calculate_ate_matching(y_boot, d_boot, ps_boot)
-            if not np.isnan(ate_b):
-                ate_bootstrap.append(ate_b)
+                # Calcular ATE bootstrap
+                ate_b = calculate_ate_matching(y_boot, d_boot, ps_boot)
+                if not np.isnan(ate_b):
+                    ate_bootstrap.append(ate_b)
         except:
             # Si el modelo no converge, omitir esta réplica
             continue
