@@ -11,7 +11,6 @@ de identificación:
 """
 
 import numpy as np
-import pandas as pd
 from scipy.spatial.distance import cdist
 import statsmodels.api as sm
 from statsmodels.regression.linear_model import OLS
@@ -171,7 +170,8 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
     # 1. Estimar propensity score con Logit
     X_logit = np.column_stack([np.ones(n), x1, x2])
     try:
-        logit_model = Logit(d, X_logit).fit(disp=0, maxiter=100, method='bfgs')
+        logit_model = Logit(d, X_logit).fit(disp=0, maxiter=100, method='bfgs',
+                                             warn_convergence=False)
         ps = logit_model.predict(X_logit)
     except:
         # Si falla, usar propensity score simple (proporción de tratados)
@@ -259,12 +259,12 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
 
 def estimate_2sls(y, d, z, x):
     """
-    Estima el ATE mediante Two-Stage Least Squares (2SLS).
+    Estima el ATE mediante OLS naive y Two-Stage Least Squares (2SLS).
 
     Primera etapa:  D = π0 + π1*Z + π2*X + v
     Segunda etapa: Y = β0 + β1*D̂ + β2*X + u
 
-    Estimador: ATE = β1
+    Estimador de interés: ATE = β1
 
     Parámetros
     ----------
@@ -282,10 +282,13 @@ def estimate_2sls(y, d, z, x):
     dict
         Diccionario con:
         - 'ate_ols': ATE usando OLS naive (sesgado)
+        - 'se_ols': Error estándar OLS
+        - 'ci_ols_lower': Límite inferior IC 95% OLS
+        - 'ci_ols_upper': Límite superior IC 95% OLS
         - 'ate_2sls': ATE usando 2SLS
         - 'se_2sls': Error estándar 2SLS
-        - 'ci_lower': Límite inferior IC 95%
-        - 'ci_upper': Límite superior IC 95%
+        - 'ci_2sls_lower': Límite inferior IC 95% 2SLS
+        - 'ci_2sls_upper': Límite superior IC 95% 2SLS
         - 'first_stage_f': Estadístico F de primera etapa
     """
     y = np.asarray(y)
@@ -300,21 +303,29 @@ def estimate_2sls(y, d, z, x):
     if x.ndim == 1:
         x = x.reshape(-1, 1)
 
-    # OLS naive (para comparación)
+    # ------------------------
+    # 1) OLS naive (para comparación)
+    # ------------------------
     X_ols = np.column_stack([np.ones(n), d, x])
     ols_model = OLS(y, X_ols).fit()
     ate_ols = ols_model.params[1]
+    se_ols = ols_model.bse[1]
 
-    # Primera etapa: D ~ Z + X
+    ci_ols_lower = ate_ols - 1.96 * se_ols
+    ci_ols_upper = ate_ols + 1.96 * se_ols
+
+    # ------------------------
+    # 2) Primera etapa: D ~ Z + X
+    # ------------------------
     X_first = np.column_stack([np.ones(n), z, x])
     first_stage = OLS(d, X_first).fit()
 
-    # Calcular estadístico F de primera etapa
     # F-test de significancia conjunta de instrumentos
     k_instruments = z.shape[1]
     r_matrix = np.zeros((k_instruments, first_stage.params.shape[0]))
     for i in range(k_instruments):
-        r_matrix[i, i + 1] = 1  # Posiciones de los instrumentos (después de constante)
+        # instrumentos están después de la constante
+        r_matrix[i, i + 1] = 1
 
     f_test = first_stage.f_test(r_matrix)
     first_stage_f = f_test.fvalue
@@ -322,51 +333,54 @@ def estimate_2sls(y, d, z, x):
     # Valores predichos de D
     d_hat = first_stage.predict(X_first)
 
-    # Segunda etapa: Y ~ D̂ + X
+    # ------------------------
+    # 3) Segunda etapa "naive": Y ~ D̂ + X (solo para ver)
+    # ------------------------
     X_second = np.column_stack([np.ones(n), d_hat, x])
-    second_stage = OLS(y, X_second).fit()
+    second_stage = OLS(y, X_second).fit()  # NO usamos sus SE
 
-    # Nota: Los errores estándar de la segunda etapa no son correctos
-    # porque no ajustan por la incertidumbre de la primera etapa.
-    # Para errores correctos, usaríamos el estimador manual de 2SLS.
-
-    # Cálculo manual de 2SLS para errores estándar correctos
+    # ------------------------
+    # 4) 2SLS manual (coef y SE correctos)
+    # ------------------------
     # Matriz de instrumentos: [1, Z, X]
     W = X_first
     # Matriz de regresores: [1, D, X]
     X_design = np.column_stack([np.ones(n), d, x])
 
-    # Proyección: X̂ = W(W'W)^-1 W'X
+    # Proyección: X̂ = P_W X, con P_W = W(W'W)^(-1)W'
     P_W = W @ np.linalg.inv(W.T @ W) @ W.T
     X_hat = P_W @ X_design
 
-    # Estimador 2SLS: β = (X̂'X)^-1 X̂'y
+    # Estimador 2SLS: β = (X' P_W X)^(-1) X' P_W y
     beta_2sls = np.linalg.inv(X_hat.T @ X_design) @ X_hat.T @ y
 
-    # Residuos
+    # Residuos estructurales
     residuals = y - X_design @ beta_2sls
 
-    # Varianza de errores
+    # Varianza escalar σ²
     sigma2 = (residuals ** 2).sum() / (n - X_design.shape[1])
 
-    # Matriz de varianza-covarianza
+    # Matriz de varianzas-covarianzas homocedástica
     vcov = sigma2 * np.linalg.inv(X_hat.T @ X_design)
     se_2sls = np.sqrt(np.diag(vcov))
 
     ate_2sls = beta_2sls[1]
     se_ate = se_2sls[1]
 
-    # Intervalo de confianza
-    ci_lower = ate_2sls - 1.96 * se_ate
-    ci_upper = ate_2sls + 1.96 * se_ate
+    # IC 95% para 2SLS
+    ci_2sls_lower = ate_2sls - 1.96 * se_ate
+    ci_2sls_upper = ate_2sls + 1.96 * se_ate
 
     return {
         'ate_ols': ate_ols,
+        'se_ols': se_ols,
+        'ci_ols_lower': ci_ols_lower,
+        'ci_ols_upper': ci_ols_upper,
         'ate_2sls': ate_2sls,
         'se_2sls': se_ate,
-        'ci_lower': ci_lower,
-        'ci_upper': ci_upper,
-        'first_stage_f': first_stage_f
+        'ci_2sls_lower': ci_2sls_lower,
+        'ci_2sls_upper': ci_2sls_upper,
+        'first_stage_f': first_stage_f,
     }
 
 
@@ -404,45 +418,51 @@ def estimate_did(df, y_var='Y', d_var='D', time_var='time',
     -------
     dict
         Diccionario con:
-        - 'att_simple': ATT usando diferencias simples
-        - 'att_regression': ATT usando regresión DID
-        - 'se': Error estándar clustered
-        - 'ci_lower': Límite inferior IC 95%
-        - 'ci_upper': Límite superior IC 95%
+        - 'att_simple': ATT usando regresión DID sin controles
+        - 'se_simple': Error estándar clustered (método simple)
+        - 'ci_simple_lower': Límite inferior IC 95% (método simple)
+        - 'ci_simple_upper': Límite superior IC 95% (método simple)
+        - 'att_regression': ATT usando regresión DID con controles
+        - 'se_regression': Error estándar clustered (con controles)
+        - 'ci_regression_lower': Límite inferior IC 95% (con controles)
+        - 'ci_regression_upper': Límite superior IC 95% (con controles)
     """
-    # Método 1: DID simple
-    treated_pre = df[(df[treatment_group_var] == 1) & (df[time_var] == 1)][y_var].mean()
-    treated_post = df[(df[treatment_group_var] == 1) & (df[time_var] == 2)][y_var].mean()
-    control_pre = df[(df[treatment_group_var] == 0) & (df[time_var] == 1)][y_var].mean()
-    control_post = df[(df[treatment_group_var] == 0) & (df[time_var] == 2)][y_var].mean()
-
-    att_simple = (treated_post - treated_pre) - (control_post - control_pre)
-
-    # Método 2: Regresión DID
     # Crear variables dummy
     df = df.copy()
     df['post'] = (df[time_var] == 2).astype(int)
     df['treated'] = df[treatment_group_var]
     df['post_x_treated'] = df['post'] * df['treated']
-
-    # Construir matriz de diseño
-    X_did = sm.add_constant(df[['post', 'treated', 'post_x_treated', x_var]])
     y = df[y_var]
 
-    # Estimar con errores clustered a nivel de unidad
-    model = OLS(y, X_did).fit(cov_type='cluster',
-                               cov_kwds={'groups': df[unit_id_var]})
+    # Método 1: DID simple (usando regresión sin controles para obtener SE)
+    # Y = α + β*Post + γ*Treated + δ*(Post×Treated) + ε
+    X_did_simple = sm.add_constant(df[['post', 'treated', 'post_x_treated']])
+    model_simple = OLS(y, X_did_simple).fit(cov_type='cluster',
+                                             cov_kwds={'groups': df[unit_id_var]})
 
-    # El coeficiente de interés es post_x_treated
-    att_regression = model.params['post_x_treated']
-    se = model.bse['post_x_treated']
-    ci_lower = model.conf_int(alpha=0.05).loc['post_x_treated', 0]
-    ci_upper = model.conf_int(alpha=0.05).loc['post_x_treated', 1]
+    att_simple = model_simple.params['post_x_treated']
+    se_simple = model_simple.bse['post_x_treated']
+    ci_simple_lower = model_simple.conf_int(alpha=0.05).loc['post_x_treated', 0]
+    ci_simple_upper = model_simple.conf_int(alpha=0.05).loc['post_x_treated', 1]
+
+    # Método 2: Regresión DID con controles
+    # Y = α + β*Post + γ*Treated + δ*(Post×Treated) + θ*X + ε
+    X_did_full = sm.add_constant(df[['post', 'treated', 'post_x_treated', x_var]])
+    model_full = OLS(y, X_did_full).fit(cov_type='cluster',
+                                         cov_kwds={'groups': df[unit_id_var]})
+
+    att_regression = model_full.params['post_x_treated']
+    se_regression = model_full.bse['post_x_treated']
+    ci_regression_lower = model_full.conf_int(alpha=0.05).loc['post_x_treated', 0]
+    ci_regression_upper = model_full.conf_int(alpha=0.05).loc['post_x_treated', 1]
 
     return {
         'att_simple': att_simple,
+        'se_simple': se_simple,
+        'ci_simple_lower': ci_simple_lower,
+        'ci_simple_upper': ci_simple_upper,
         'att_regression': att_regression,
-        'se': se,
-        'ci_lower': ci_lower,
-        'ci_upper': ci_upper
+        'se_regression': se_regression,
+        'ci_regression_lower': ci_regression_lower,
+        'ci_regression_upper': ci_regression_upper
     }

@@ -12,7 +12,8 @@ import pandas as pd
 
 def generate_dgp_exercise1(n, seed=None):
     """
-    Genera datos para el Ejercicio 1: Diferencia de medias vs. regresión OLS.
+    Genera datos para el Ejercicio 1: Diferencia de medias vs. 
+    regresión OLS ajustando por covariables.
 
     DGP con selección sobre observables:
     - X ~ N(0, 1)
@@ -60,7 +61,7 @@ def generate_dgp_exercise1(n, seed=None):
 
 def generate_dgp_exercise2(n, seed=None):
     """
-    Genera datos para el Ejercicio 2: Propensity Score Matching.
+    Genera datos para el Ejercicio 2: Propensity Score Matching (PSM).
 
     DGP con independencia condicional:
     - X1 ~ N(0, 1)
@@ -111,7 +112,7 @@ def generate_dgp_exercise2(n, seed=None):
         'X1': X1,
         'X2': X2,
         'true_ate': 4.0,
-        'true_ps': true_ps  # Para fines de validación
+        'true_ps': true_ps
     }
 
 
@@ -125,7 +126,7 @@ def generate_dgp_exercise3(n, seed=None, weak_instrument=False):
     - v ~ N(0, 1) (error estructural)
     - D = 0.2 + γ*Z + 0.5*X + v, donde γ = 0.3 (fuerte) o 0.05 (débil)
     - ε ~ N(0, 1) (error idiosincrático)
-    - u = 0.8*v + ε (endogeneidad: corr(u, v) = 0.8)
+    - u = 0.8*v + ε (endogeneidad)
     - Y = 5 + 2*D + X + u
     - ATE verdadero = 2
 

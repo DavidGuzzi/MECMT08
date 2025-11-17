@@ -31,13 +31,20 @@ def create_results_table(results_dict, decimals=4):
     rows = []
 
     for estimator_name, metrics in results_dict.items():
+        # Calcular media estimada como: valor_verdadero + sesgo
+        true_value = metrics.get('true_value', np.nan)
+        bias = metrics.get('bias', np.nan)
+        mean_estimate = true_value + bias if not np.isnan(true_value) and not np.isnan(bias) else np.nan
+
         row = {
             'Estimador': estimator_name,
-            'Sesgo': round(metrics.get('bias', np.nan), decimals),
+            'Verdadero': round(true_value, decimals),
+            'Media': round(mean_estimate, decimals),
+            'Sesgo': round(bias, decimals),
             'Varianza': round(metrics.get('variance', np.nan), decimals),
             'MSE': round(metrics.get('mse', np.nan), decimals),
             'Cobertura': round(metrics.get('coverage', np.nan), decimals),
-            'N': int(metrics.get('n_replications', 0))
+            'R': int(metrics.get('n_replications', 0))
         }
         rows.append(row)
 
@@ -260,10 +267,17 @@ def create_comparison_table(exercises_results, decimals=4):
 
     for exercise_name, estimators_dict in exercises_results.items():
         for estimator_name, metrics in estimators_dict.items():
+            # Calcular media estimada
+            true_value = metrics.get('true_value', np.nan)
+            bias = metrics.get('bias', np.nan)
+            mean_estimate = true_value + bias if not np.isnan(true_value) and not np.isnan(bias) else np.nan
+
             row = {
                 'Ejercicio': exercise_name,
                 'Estimador': estimator_name,
-                'Sesgo': round(metrics.get('bias', np.nan), decimals),
+                'Verdadero': round(true_value, decimals),
+                'Media': round(mean_estimate, decimals),
+                'Sesgo': round(bias, decimals),
                 'Varianza': round(metrics.get('variance', np.nan), decimals),
                 'MSE': round(metrics.get('mse', np.nan), decimals),
                 'Cobertura': round(metrics.get('coverage', np.nan), decimals)

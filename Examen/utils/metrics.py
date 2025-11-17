@@ -9,6 +9,7 @@ Contiene funciones para evaluar propiedades de muestra finita de estimadores:
 """
 
 import numpy as np
+from scipy import stats
 
 
 def calculate_bias(estimates, true_value):
@@ -139,7 +140,7 @@ def calculate_coverage(estimates, standard_errors, true_value, alpha=0.05):
         return np.nan
 
     # Calcular límites de IC usando distribución normal
-    z_critical = 1.96  # Para α=0.05 (IC 95%)
+    z_critical = stats.norm.ppf(1 - alpha/2)  # Valor crítico para nivel (1-α)
     ci_lower = estimates_clean - z_critical * se_clean
     ci_upper = estimates_clean + z_critical * se_clean
 
