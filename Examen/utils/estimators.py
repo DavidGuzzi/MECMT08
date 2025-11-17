@@ -15,6 +15,7 @@ from scipy.spatial.distance import cdist
 import statsmodels.api as sm
 from statsmodels.regression.linear_model import OLS
 from statsmodels.discrete.discrete_model import Logit
+import warnings
 
 
 def estimate_diff_means(y, d):
@@ -170,9 +171,14 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
     # 1. Estimar propensity score con Logit
     X_logit = np.column_stack([np.ones(n), x1, x2])
     try:
-        logit_model = Logit(d, X_logit).fit(disp=0, maxiter=100, method='bfgs',
-                                             warn_convergence=False)
-        ps = logit_model.predict(X_logit)
+        # Suprimir warnings de inversión de Hessiana (común en muestras pequeñas)
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore',
+                                    message='Inverting hessian failed',
+                                    category=Warning)
+            logit_model = Logit(d, X_logit).fit(disp=0, maxiter=100, method='bfgs',
+                                                 warn_convergence=False)
+            ps = logit_model.predict(X_logit)
     except:
         # Si falla, usar propensity score simple (proporción de tratados)
         ps = np.ones(n) * d.mean()
@@ -226,9 +232,14 @@ def estimate_psm(y, d, x1, x2, n_bootstrap=200, seed=None):
         try:
             # Verificar que hay variación en tratamiento
             if d_boot.sum() > 0 and d_boot.sum() < n:
-                logit_boot = Logit(d_boot, X_boot).fit(disp=0, maxiter=100,
-                                                        method='bfgs', warn_convergence=False)
-                ps_boot = logit_boot.predict(X_boot)
+                # Suprimir warnings de inversión de Hessiana en bootstrap
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore',
+                                            message='Inverting hessian failed',
+                                            category=Warning)
+                    logit_boot = Logit(d_boot, X_boot).fit(disp=0, maxiter=100,
+                                                            method='bfgs', warn_convergence=False)
+                    ps_boot = logit_boot.predict(X_boot)
 
                 # Calcular ATE bootstrap
                 ate_b = calculate_ate_matching(y_boot, d_boot, ps_boot)

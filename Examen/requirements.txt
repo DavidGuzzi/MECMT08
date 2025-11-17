@@ -1,0 +1,18 @@
+# MECMT08 - Microeconometría II
+# Dependencias del proyecto
+# Python 3.9+ requerido
+
+# Computación científica
+numpy>=1.19.0
+pandas>=1.1.0
+scipy>=1.5.0
+
+# Modelado econométrico
+statsmodels>=0.12.0
+
+# Visualización
+matplotlib>=3.3.0
+seaborn>=0.11.0
+
+# Notebooks (opcional, necesario para ejecutar archivos .ipynb)
+jupyter>=1.0.0
